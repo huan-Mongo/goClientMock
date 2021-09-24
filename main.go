@@ -14,12 +14,15 @@ import (
 
 var mockDeployment *replitest.MockDeployment
 
+var started []*event.CommandStartedEvent
+var succeeded []*event.CommandSucceededEvent
+var failed []*event.CommandFailedEvent
+var finishedEvents []*event.CommandFinishedEvent
+
+
 func newTestClient() *mongo.Client {
 
 	clientOpts := options.Client().SetWriteConcern(mt.MajorityWc).SetReadPreference(mt.PrimaryRp)
-	var started []*event.CommandStartedEvent
-	var succeeded []*event.CommandSucceededEvent
-	var failed []*event.CommandFailedEvent
 
 	// command monitor
 	clientOpts.SetMonitor(&event.CommandMonitor{
@@ -28,9 +31,11 @@ func newTestClient() *mongo.Client {
 		},
 		Succeeded: func(_ context.Context, cse *event.CommandSucceededEvent) {
 			succeeded = append(succeeded, cse)
+			finishedEvents = append(finishedEvents, &cse.CommandFinishedEvent)
 		},
 		Failed: func(_ context.Context, cfe *event.CommandFailedEvent) {
 			failed = append(failed, cfe)
+			finishedEvents = append(finishedEvents, &cfe.CommandFinishedEvent)
 		},
 	})
 	connsCheckedOut := 0
@@ -73,6 +78,16 @@ func main()  {
 	fmt.Println(ret)
 	fmt.Println(err)
 
+	mockDeployment.AddResponses(mt.CreateWriteErrorsResponse(mt.WriteError{
+		Message: "Not transaction numbers",
+		Code:    20,
+		},
+	))
+
+	ret, err = coll.InsertOne(context.Background(), bson.D{})
+	fmt.Println(ret)
+	fmt.Println(err)
+
 	ns := coll.Database().Name() + "." + coll.Name()
 	aggregateRes := mt.CreateCursorResponse(1, ns, mt.FirstBatch, bson.D{
 		{"_id", bson.D{{"first", "resume token"}}},
@@ -88,5 +103,8 @@ func main()  {
 		fmt.Println(err)
 	}
 
-
+	fmt.Printf("%+q\n", started)
+	fmt.Printf("%+q\n", succeeded)
+	fmt.Printf("%+q\n", failed)
+	fmt.Printf("%+q\n", finishedEvents)
 }
