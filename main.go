@@ -9,7 +9,7 @@ import (
 	mt "go.mongodb.org/mongo-driver/mongo/integration/mtest"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	_ "go.mongodb.org/mongo-driver/mongo/options"
-	"testmock.com/test/replitest"
+	"goClientMock/replitest"
 )
 
 var mockDeployment *replitest.MockDeployment
@@ -72,39 +72,37 @@ func main()  {
 	client.Connect(context.Background())
 
 	mockDeployment.AddResponses(mt.CreateSuccessResponse())
+	mockDeployment.AddResponses(mt.CreateSuccessResponse())
 
-	coll := client.Database("test").Collection("test")
-	ret, err := coll.InsertOne(context.Background(), bson.D{})
-	fmt.Println(ret)
-	fmt.Println(err)
-
-	mockDeployment.AddResponses(mt.CreateWriteErrorsResponse(mt.WriteError{
-		Message: "Not transaction numbers",
-		Code:    20,
+	coll := client.Database("test").Collection("test_col")
+	coll.InsertMany(context.Background(), []interface{}{
+		bson.D{
+			{"_id", "1"},
 		},
-	))
+		bson.D{
+			{"_id", "2"}},
+		},
+	)
 
-	ret, err = coll.InsertOne(context.Background(), bson.D{})
-	fmt.Println(ret)
-	fmt.Println(err)
+	coll.InsertMany(context.Background(), []interface{}{
+		bson.D{
+			{"_id", "3"},
+		},
+		bson.D{
+			{"_id", "4"}},
+	},
+	)
 
-	ns := coll.Database().Name() + "." + coll.Name()
-	aggregateRes := mt.CreateCursorResponse(1, ns, mt.FirstBatch, bson.D{
-		{"_id", bson.D{{"first", "resume token"}}},
-	})
-
-	mockDeployment.AddResponses(aggregateRes)
-	cs, err := coll.Watch(context.Background(), bson.D{})
-	fmt.Println(err)
-	if err == nil  {
-		// if there was no error and an error is expected, capture the result from iterating the stream once
-		fmt.Println(cs.Next(context.Background()))
-		err = cs.Err()
-		fmt.Println(err)
+	cnt := 0
+	for _, event := range started {
+		if _, ok := event.Command.Lookup("insert").StringValueOK(); ok {
+			if documents, ok := event.Command.Lookup("documents").ArrayOK(); ok {
+				if doc, err := documents.Elements(); err == nil {
+					//fmt.Println(doc)
+					cnt += len(doc)
+				}
+			}
+		}
 	}
-
-	fmt.Printf("%+q\n", started)
-	fmt.Printf("%+q\n", succeeded)
-	fmt.Printf("%+q\n", failed)
-	fmt.Printf("%+q\n", finishedEvents)
+	fmt.Println(cnt)
 }
